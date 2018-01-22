@@ -1,0 +1,259 @@
+master:
+  name: jenkins-master
+
+  image:
+    repository: "jenkins/jenkins"
+    tag: "2.102"
+    pullPolicy: "Always"
+    # pullSecret: "jenkins"
+
+  component: "jenkins-master"
+  useSecurity: true
+
+  adminUser: admin
+  # adminPassword: <defaults to random>
+  adminEmail: "ci@temporary.com"
+
+  resources:
+    requests:
+      memory: 512m
+      cpu: 200m
+
+  ## Set min/max heap here if needed with:
+  # javaOpts: "-Xms512m -Xmx512m"
+  javaOpts: >-
+    -XX:+UnlockExperimentalVMOptions
+    -XX:+UseCGroupMemoryLimitForHeap
+    -Djava.awt.headless=true
+
+  jenkinsUrl: "http://ci.temporary.com"
+  # jenkinsUriPrefix: "/jenkins"
+  # jenkinsOpts: ""
+
+  ## If true the init container will overwite any existing config.xml
+  jenkinsInitClobbersConfig: false
+
+  ## Master Service annotations
+  serviceAnnotations: {}
+
+  ## The name of the Secret containing specific SSH keys to use. They COULD be created using:
+  ##   kubectl -n jenkins create secret generic jenkins-ssh-keys \
+  ##     --from-file=/home/foo/.ssh/id_rsa \
+  ##     --from-file=/home/foo/.ssh/id_rsa.pub \
+  ##     --from-file=/home/foo/.ssh/known_hosts
+  secretKeyName: "jenkins-ssh-keys"
+
+  ## For minikube, set this to NodePort, elsewhere use LoadBalancer
+  ## Use ClusterIP if your setup includes ingress controller
+  serviceType: LoadBalancer
+
+  servicePort: 8080
+
+  ## Used to create Ingress record (should used with ServiceType: ClusterIP)
+  # nodePort: <to set explicitly, choose port between 30000-32767
+  containerPort: 8080
+  slaveListenerPort: 50000
+
+  loadBalancerSourceRanges:
+  - 0.0.0.0/0
+
+  ## Optionally assign a known public LB IP
+  # loadBalancerIP: 1.2.3.4
+
+  ## Optionally configure a JMX port
+  ## requires additional JavaOpts, ie
+  # javaOpts: >
+  #   -Dcom.sun.management.jmxremote.port=4000
+  #   -Dcom.sun.management.jmxremote.authenticate=false
+  #   -Dcom.sun.management.jmxremote.ssl=false
+  # jmxPort: 4000
+
+  customConfigMap: false
+
+  ## List of Groovy init scripts to be executed during Jenkins master start
+  initScripts:
+   - |
+     print 'adding global pipeline libraries, register properties, bootstrap jobs...'
+
+  ## List of plugins to be install during Jenkins master start
+  installPlugins:
+    - credentials-binding:1.13
+    - docker-build-publish:1.3.2
+    - git:3.7.0
+    - kubernetes:1.1.3
+    - workflow-aggregator:2.5
+    - workflow-job:2.16
+    ## Uncomment (and set prometheus.enabled to true) to enable the Prometheus metric endpoint
+    # - prometheus:1.1.1
+
+  ## Used to approve a list of groovy functions in pipelines used the script-security plugin. Can be viewed under /scriptApproval
+  # scriptApproval:
+  #   - "method groovy.json.JsonSlurperClassic parseText java.lang.String"
+  #   - "new groovy.json.JsonSlurperClassic"
+  #   - "method groovy.lang.GroovyObject invokeMethod java.lang.String java.lang.Object"
+
+  ## Node labels and tolerations for pod assignment
+  ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+  ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#taints-and-tolerations-beta-feature
+  nodeSelector: {}
+  tolerations: {}
+
+## Ingress configuration.
+ingress:
+  ## If ingress.host is set, an Ingress resource will be created.
+  host: ci.temporary.com
+
+  annotations:
+    # kubernetes.io/ingress.class: "nginx"
+    # kubernetes.io/tls-acme: "true"
+
+  tls:
+  # - secretName: jenkins.cluster.local
+  #   hosts:
+  #     - jenkins.cluster.local
+
+persistence:
+  enabled: true
+
+  ## A manually-managed Persistent Volume and Claim
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # existingClaim:
+
+  ## jenkins data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # storageClass: "-"
+
+  annotations: {}
+  accessMode: ReadWriteOnce
+  size: 8Gi
+
+  volumes:
+  #  - name: nothing
+  #    emptyDir: {}
+
+  mounts:
+  #  - mountPath: /var/nothing
+  #    name: nothing
+  #    readOnly: true
+
+networkPolicy:
+  ## Enable creation of NetworkPolicy resources.
+  enabled: false
+
+prometheus:
+  ## Enable exposure of a Prometheus metric endpoint (requires the 'prometheus' plugin).
+  enabled: false
+
+  ## The path where the prometheus metrics should be provided.
+  urlName: metricz
+
+  ## Not sure what this does. It's not documented and isn't an option in the UI.
+  # additionalPath:
+
+  ## The default namespace (default value is 'default').
+  ## Setting this to an empty value will return the build values as Jenkins metrics.
+  defaultNamespace: default
+
+  ## Enable authentication for the Prometheus endpoint.
+  useAuthenticatedEndpoint: false
+
+  countSuccessfulBuilds: true
+  countUnstableBuilds: true
+  countFailedBuilds: true
+  countNotBuiltBuilds: true
+  countAbortedBuilds: true
+
+sharedLibraries:
+    ## An identifier you pick for this library, to be used in the @Library annotation.
+    ## An environment variable library.THIS_NAME.version will also be set to the
+    ## version loaded for a build (whether that comes from the Default version
+    ## here, or from an annotation after the @ separator).
+  - name: fabric8-shared-library
+
+    ## Assumes GitSCMSource.
+    repository: git@github.com:fabric8io/jenkins-pipeline-library.git
+    ## credentialsId: github
+
+    ## A default version of the library to load if a script does not select another.
+    ## Might be a branch name, tag, commit hash, etc., according to the SCM.
+    defaultVersion: master
+
+    ## A unique identifier string. If not set, one is randomly generated
+    # id: ffc5dd3e-d35d-4e94-8442-9268dad7f76d
+
+    ## If true, scripts will automatically have access to this library without
+    ## needing to request it via @Library.
+    implicit: true
+
+    ## If checked, scripts may select a custom version of the library by
+    ## appending @someversion in the @Library annotation. Otherwise they are
+    ## restricted to using the version you select here.
+    allowVersionOverride: true
+
+    ## If checked, any changes in the library will be included in the changesets of a build.
+    ## This can be overridden in the jenkinsfile: @Library(value="name@version", changelog=true|false)
+    includeInChangesets: true
+
+## Install Default RBAC roles and bindings
+rbac:
+  install: false
+  serviceAccountName: default
+
+  ## Cluster role reference
+  roleRef: cluster-admin
+
+## Definitions for one or more build agents.
+## TODO Add support for pod template inheritance.
+agents:
+  - component: "jenkins-agent"
+    enabled: true
+    privileged: false
+
+    image:
+      repository: "jenkins/jnlp-slave"
+      tag: "3.16-1"
+      pullPolicy: "Always"
+      # pullSecret: jenkins
+
+    labels: "base default"
+
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 200m
+
+    javaOpts: >-
+      -XX:+UnlockExperimentalVMOptions
+      -XX:+UseCGroupMemoryLimitForHeap
+
+    ## JnlpProtocol3 is disabled by default due to the known stability and
+    ## scalability issues. Use JNLP_PROTOCOL_OPTS to alter the behavior
+    # jnlpProtocolOpts: "-Dorg.jenkinsci.remoting.engine.JnlpProtocol3.disabled=false"
+
+    envVars:
+      # MY_VAR: "foo"
+      
+    ## Key Value selectors. Ex:
+    ## jenkins-agent: v1
+    nodeSelector: {}
+
+    # secretKeyName: "jenkins-ssh-keys"
+
+    ## You can define the volumes that you want to mount for this container
+    ## Allowed types are: ConfigMap, EmptyDir, HostPath, Nfs, Pod, Secret
+    ##
+    ## Configure the attributes as they appear in the corresponding Java class for that type
+    ## https://github.com/jenkinsci/kubernetes-plugin/tree/master/src/main/java/org/csanchez/jenkins/plugins/kubernetes/volumes
+    volumes:
+    # - type: Secret
+    #   secretName: mysecret
+    #   mountPath: /var/myapp/mysecret
+    # - type: HostPath
+    #   hostPath: /var/foo
+    #   mountPath: /var/foo

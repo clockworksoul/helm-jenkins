@@ -1,0 +1,15 @@
+name: jenkins
+home: https://jenkins.io/
+version: 0.15.0
+appVersion: 2.102
+description: Open source continuous integration server. It supports multiple SCM tools
+  including CVS, Subversion and Git. It can execute Apache Ant and Apache Maven-based
+  projects as well as arbitrary scripts. Forked from
+  https://github.com/kubernetes/charts/tree/master/stable/jenkins
+sources:
+- https://github.com/jenkinsci/jenkins
+- https://github.com/jenkinsci/docker-jnlp-slave
+maintainers:
+- name: Matthew Titmus
+  email: matthew.titmua@gmail.com
+icon: https://wiki.jenkins-ci.org/download/attachments/2916393/logo.png

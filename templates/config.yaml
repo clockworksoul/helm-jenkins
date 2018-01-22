@@ -1,0 +1,345 @@
+{{- if not .Values.master.customConfigMap }}
+{{- $releaseName := .Release.Name -}}
+{{- $fullName := include "jenkins.fullname" . -}}
+{{- $jenkinsUrl := printf "http://%s:%v%s" (include "jenkins.fullname" .) (.Values.master.servicePort) (default "" .Values.master.jenkinsUriPrefix ) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "jenkins.fullname" . }}
+data:
+  config.xml: |-
+    <?xml version='1.0' encoding='UTF-8'?>
+    <hudson>
+      <disabledAdministrativeMonitors/>
+      <version>{{ .Values.master.image.tag }}</version>
+      <installState class="jenkins.install.InstallState$5">
+        <isSetupComplete>true</isSetupComplete>
+        <name>RESTART</name>
+      </installState>
+      <numExecutors>0</numExecutors>
+      <mode>NORMAL</mode>
+      <useSecurity>{{ .Values.master.useSecurity }}</useSecurity>
+      <authorizationStrategy class="hudson.security.FullControlOnceLoggedInAuthorizationStrategy">
+        <denyAnonymousReadAccess>true</denyAnonymousReadAccess>
+      </authorizationStrategy>
+      <securityRealm class="hudson.security.LegacySecurityRealm"/>
+      <disableRememberMe>false</disableRememberMe>
+      <projectNamingStrategy class="jenkins.model.ProjectNamingStrategy$DefaultProjectNamingStrategy"/>
+      <workspaceDir>${JENKINS_HOME}/workspace/${ITEM_FULLNAME}</workspaceDir>
+      <buildsDir>${ITEM_ROOTDIR}/builds</buildsDir>
+      <markupFormatter class="hudson.markup.EscapedMarkupFormatter"/>
+      <jdks/>
+      <viewsTabBar class="hudson.views.DefaultViewsTabBar"/>
+      <myViewsTabBar class="hudson.views.DefaultMyViewsTabBar"/>
+      <clouds>
+        <org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud plugin="kubernetes@1.1.2">
+          <name>kubernetes</name>
+          <defaultsProviderTemplate></defaultsProviderTemplate>
+          <templates>
+{{- range $index, $agent := .Values.agents }}
+{{- if $agent.enabled }}
+            <org.csanchez.jenkins.plugins.kubernetes.PodTemplate>
+              <inheritFrom></inheritFrom>
+              <name>{{ $agent.component }}</name>
+              <namespace></namespace>
+              <privileged>false</privileged>
+              <alwaysPullImage>false</alwaysPullImage>
+              <instanceCap>2147483647</instanceCap>
+              <slaveConnectTimeout>100</slaveConnectTimeout>
+              <idleMinutes>0</idleMinutes>
+              <activeDeadlineSeconds>0</activeDeadlineSeconds>
+              <label>{{ $agent.labels }}</label>
+              <nodeSelector>
+                {{- $local := dict "first" true }}
+                {{- range $key, $value := $agent.nodeSelector }}
+                  {{- if not $local.first }},{{- end }}
+                  {{- $key }}={{ $value }}
+                  {{- $_ := set $local "first" false }}
+                {{- end }}</nodeSelector>
+              <nodeUsageMode>NORMAL</nodeUsageMode>
+              <customWorkspaceVolumeEnabled>false</customWorkspaceVolumeEnabled>
+              <workspaceVolume class="org.csanchez.jenkins.plugins.kubernetes.volumes.workspace.EmptyDirWorkspaceVolume">
+                <memory>false</memory>
+              </workspaceVolume>
+              <volumes>
+                <org.csanchez.jenkins.plugins.kubernetes.volumes.HostPathVolume>
+                  <mountPath>/var/run/docker.sock</mountPath>
+                  <hostPath>/var/run/docker.sock</hostPath>
+                </org.csanchez.jenkins.plugins.kubernetes.volumes.HostPathVolume>
+                <org.csanchez.jenkins.plugins.kubernetes.volumes.HostPathVolume>
+                  <mountPath>/var/jenkins_home/workspace</mountPath>
+                  <hostPath>/var/jenkins_home/workspace</hostPath>
+                </org.csanchez.jenkins.plugins.kubernetes.volumes.HostPathVolume>
+{{- range $index, $volume := $agent.volumes }}
+                <org.csanchez.jenkins.plugins.kubernetes.volumes.{{ $volume.type }}Volume>
+{{- range $key, $value := $volume }}{{- if not (eq $key "type") }}
+                  <{{ $key }}>{{ $value }}</{{ $key }}>
+{{- end }}{{- end }}
+                </org.csanchez.jenkins.plugins.kubernetes.volumes.{{ $volume.type }}Volume>
+{{- end }}
+{{- if $agent.secretKeyName }}
+{{- end }}
+              </volumes>
+              <containers>
+                <org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate>
+                  <name>jnlp</name>
+                  <image>{{ $agent.image.repository }}:{{ $agent.image.tag }}</image>
+{{- if $agent.privileged }}
+                  <privileged>true</privileged>
+{{- else }}
+                  <privileged>false</privileged>
+{{- end }}
+{{- if eq $agent.image.pullPolicy "Always" }}
+                  <alwaysPullImage>true</alwaysPullImage>
+{{- else }}
+                  <alwaysPullImage>false</alwaysPullImage>
+{{- end }}
+                  <workingDir>/var/jenkins_home/</workingDir>
+                  <command></command>
+                  <args>${computer.jnlpmac} ${computer.name}</args>
+                  <ttyEnabled>false</ttyEnabled>
+                  <resourceRequestCpu>{{ default "" $agent.resources.requests.cpu }}</resourceRequestCpu>
+                  <resourceRequestMemory>{{ default "" $agent.resources.requests.memory }}</resourceRequestMemory>
+                  <resourceLimitCpu>{{ if $agent.resources.limits }}{{ default "" $agent.resources.limits.cpu }}{{ end }}</resourceLimitCpu>
+                  <resourceLimitMemory>{{ if $agent.resources.limits }}{{ default "" $agent.resources.limits.memory }}{{ end }}</resourceLimitMemory>
+                  <envVars>
+                    <org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                      <key>JENKINS_URL</key>
+                      <value>{{ $jenkinsUrl }}</value>
+                    </org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                    {{- if $agent.javaOpts }}
+                    <org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                      <key>JAVA_OPTS</key>
+                      <value>{{ $agent.javaOpts }}</value>
+                    </org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                    {{- end }}
+                    {{- if $agent.jnlpProtocolOpts }}
+                    <org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                      <key>JNLP_PROTOCOL_OPTS</key>
+                      <value>{{ $agent.jnlpProtocolOpts }}</value>
+                    </org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                    {{- end }}
+                    {{- if $agent.envVars }}
+                    {{- range $key, $val := $agent.envVars }}
+                    <org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                      <key>{{ $key }}</key>
+                      <value>{{ $val }}</value>
+                    </org.csanchez.jenkins.plugins.kubernetes.ContainerEnvVar>
+                    {{- end }}
+                    {{- end }}
+                  </envVars>
+                  <ports/>
+                  <livenessProbe>
+                    <execArgs></execArgs>
+                    <timeoutSeconds>0</timeoutSeconds>
+                    <initialDelaySeconds>0</initialDelaySeconds>
+                    <failureThreshold>0</failureThreshold>
+                    <periodSeconds>0</periodSeconds>
+                    <successThreshold>0</successThreshold>
+                  </livenessProbe>
+                </org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate>
+              </containers>
+              <envVars/>
+              <annotations/>
+{{- if $agent.image.pullSecret }}
+              <imagePullSecrets>
+                <org.csanchez.jenkins.plugins.kubernetes.PodImagePullSecret>
+                  <name>{{ $agent.image.pullSecret }}</name>
+                </org.csanchez.jenkins.plugins.kubernetes.PodImagePullSecret>
+              </imagePullSecrets>
+{{- else }}
+              <imagePullSecrets/>
+{{- end }}
+            </org.csanchez.jenkins.plugins.kubernetes.PodTemplate>
+{{- end }}
+{{- end }}
+          </templates>
+          <serverUrl>https://kubernetes.default</serverUrl>
+          <skipTlsVerify>false</skipTlsVerify>
+          <namespace>{{ .Release.Namespace }}</namespace>
+          <jenkinsUrl>http://{{ template "jenkins.fullname" . }}:{{ .Values.master.servicePort }}{{ default "" .Values.master.jenkinsUriPrefix }}</jenkinsUrl>
+          <jenkinsTunnel>{{ template "jenkins.fullname" . }}-agent:50000</jenkinsTunnel>
+          <containerCap>10</containerCap>
+          <retentionTimeout>5</retentionTimeout>
+          <connectTimeout>0</connectTimeout>
+          <readTimeout>0</readTimeout>
+          <maxRequestsPerHost>32</maxRequestsPerHost>
+        </org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud>
+      </clouds>
+      <quietPeriod>5</quietPeriod>
+      <scmCheckoutRetryCount>0</scmCheckoutRetryCount>
+      <views>
+        <hudson.model.AllView>
+          <owner class="hudson" reference="../../.."/>
+          <name>all</name>
+          <filterExecutors>false</filterExecutors>
+          <filterQueue>false</filterQueue>
+          <properties class="hudson.model.View$PropertyList"/>
+        </hudson.model.AllView>
+      </views>
+      <primaryView>all</primaryView>
+      <slaveAgentPort>50000</slaveAgentPort>
+      <disabledAgentProtocols>
+        <string>JNLP-connect</string>
+        <string>JNLP2-connect</string>
+      </disabledAgentProtocols>
+      <label></label>
+      <nodeProperties/>
+      <globalNodeProperties/>
+      <noUsageStatistics>true</noUsageStatistics>
+    </hudson>
+{{- if .Values.master.scriptApproval }}
+  scriptapproval.xml: |-
+    <?xml version='1.0' encoding='UTF-8'?>
+    <scriptApproval plugin="script-security@1.27">
+      <approvedScriptHashes/>
+      <approvedSignatures>
+{{- range $key, $val := .Values.master.scriptApproval }}
+        <string>{{ $val }}</string>
+{{- end }}
+      </approvedSignatures>
+      <aclApprovedSignatures/>
+      <approvedClasspathEntries/>
+      <pendingScripts/>
+      <pendingSignatures/>
+      <pendingClasspathEntries/>
+    </scriptApproval>
+{{- end }}
+  locationconfiguration.xml: |-
+    <?xml version='1.0' encoding='UTF-8'?>
+    <jenkins.model.JenkinsLocationConfiguration>
+      <adminAddress>{{ .Values.master.adminEmail }}</adminAddress>
+      <jenkinsUrl>{{ .Values.master.jenkinsUrl }}{{ default "" .Values.master.jenkinsUriPrefix }}</jenkinsUrl>
+    </jenkins.model.JenkinsLocationConfiguration>
+{{- if .Values.master.secretKeyName }}
+  credentials.xml: |-
+    <?xml version='1.0' encoding='UTF-8'?>
+    <com.cloudbees.plugins.credentials.SystemCredentialsProvider plugin="credentials@2.1.16">
+      <domainCredentialsMap class="hudson.util.CopyOnWriteMap$Hash">
+        <entry>
+          <com.cloudbees.plugins.credentials.domains.Domain>
+            <specifications/>
+          </com.cloudbees.plugins.credentials.domains.Domain>
+          <java.util.concurrent.CopyOnWriteArrayList>
+            <com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey plugin="ssh-credentials@1.13">
+              <scope>GLOBAL</scope>
+              <id>github</id>
+              <description>Global GitHub Keys</description>
+              <username></username>
+              <privateKeySource class="com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey$FileOnMasterPrivateKeySource">
+                <privateKeyFile>/usr/share/jenkins/ref/keys/id_rsa</privateKeyFile>
+              </privateKeySource>
+            </com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey>
+          </java.util.concurrent.CopyOnWriteArrayList>
+        </entry>
+      </domainCredentialsMap>
+    </com.cloudbees.plugins.credentials.SystemCredentialsProvider>
+{{- end }}
+  globallibraries.xml: |-
+    <?xml version='1.0' encoding='UTF-8'?>
+    <org.jenkinsci.plugins.workflow.libs.GlobalLibraries plugin="workflow-cps-global-lib@2.9">
+      <libraries>
+{{- range $index, $library := .Values.sharedLibraries }}
+        <org.jenkinsci.plugins.workflow.libs.LibraryConfiguration>
+          <name>{{ $library.name }}</name>
+          <retriever class="org.jenkinsci.plugins.workflow.libs.SCMSourceRetriever">
+            <scm class="jenkins.plugins.git.GitSCMSource" plugin="git@3.7.0">
+{{- if $library.id }}
+              <id>{{ $library.id }}</id>
+{{- else }}
+              <id>{{ randAlphaNum 8 }}-{{ randAlphaNum 4 }}-{{ randAlphaNum 4 }}-{{ randAlphaNum 4 }}-{{ randAlphaNum 12 }}</id>
+{{- end }}
+              <remote>{{ $library.repository }}</remote>
+              <credentialsId>{{ $library.credentialsId }}</credentialsId>
+              <traits>
+                <jenkins.plugins.git.traits.BranchDiscoveryTrait/>
+              </traits>
+            </scm>
+          </retriever>
+{{- if $library.defaultVersion }}
+          <defaultVersion>{{ $library.defaultVersion }}</defaultVersion>
+{{- end }}
+{{- if $library.implicit }}
+          <implicit>true</implicit>
+{{- else }}
+          <implicit>false</implicit>
+{{- end }}
+{{- if $library.allowVersionOverride }}
+          <allowVersionOverride>true</allowVersionOverride>
+{{- else }}
+          <allowVersionOverride>false</allowVersionOverride>
+{{- end }}
+{{- if $library.includeInChangesets }}
+          <includeInChangesets>true</includeInChangesets>
+{{- else }}
+          <includeInChangesets>false</includeInChangesets>
+{{- end }}
+        </org.jenkinsci.plugins.workflow.libs.LibraryConfiguration>
+{{- end }}
+      </libraries>
+    </org.jenkinsci.plugins.workflow.libs.GlobalLibraries>
+{{- if .Values.prometheus.enabled }}
+  prometheus.xml: |-
+    <?xml version='1.0' encoding='UTF-8'?>
+    <org.jenkinsci.plugins.prometheus.config.PrometheusConfiguration plugin="prometheus@1.1.1">
+      <urlName>{{ .Values.prometheus.urlName }}</urlName>
+      <additionalPath>{{ .Values.prometheus.additionalPath }}</additionalPath>
+      <defaultNamespace>{{ .Values.prometheus.defaultNamespace }}</defaultNamespace>
+      <useAuthenticatedEndpoint>{{ .Values.prometheus.useAuthenticatedEndpoint }}</useAuthenticatedEndpoint>
+      <countSuccessfulBuilds>{{ .Values.prometheus.countSuccessfulBuilds }}</countSuccessfulBuilds>
+      <countUnstableBuilds>{{ .Values.prometheus.countUnstableBuilds }}</countUnstableBuilds>
+      <countFailedBuilds>{{ .Values.prometheus.countFailedBuilds }}</countFailedBuilds>
+      <countNotBuiltBuilds>{{ .Values.prometheus.countNotBuiltBuilds }}</countNotBuiltBuilds>
+      <countAbortedBuilds>{{ .Values.prometheus.countAbortedBuilds }}</countAbortedBuilds>
+    </org.jenkinsci.plugins.prometheus.config.PrometheusConfiguration>
+{{- end }}
+  apply_config.sh: |-
+    mkdir -p /usr/share/jenkins/ref/secrets/;
+    echo "false" > /usr/share/jenkins/ref/secrets/slave-to-master-security-kill-switch;
+
+{{- if .Values.master.jenkinsInitClobbersConfig }}
+    cp /var/jenkins_config/config.xml /var/jenkins_home;
+{{- else }}
+    cp -n /var/jenkins_config/config.xml /var/jenkins_home;
+{{- end }}
+
+{{- if .Values.master.installPlugins }}
+    cp /var/jenkins_config/plugins.txt /var/jenkins_home;
+    rm -rf /usr/share/jenkins/ref/plugins/*.lock
+    /usr/local/bin/install-plugins.sh `echo $(cat /var/jenkins_home/plugins.txt)`;
+{{- end }}
+
+{{- if .Values.master.scriptApproval }}
+    cp -n /var/jenkins_config/scriptapproval.xml /var/jenkins_home/scriptApproval.xml;
+{{- end }}
+
+{{- if .Values.master.initScripts }}
+    mkdir -p /var/jenkins_home/init.groovy.d/;
+    cp -n /var/jenkins_config/*.groovy /var/jenkins_home/init.groovy.d/
+{{- end }}
+
+{{- if .Values.master.secretKeyName }}
+    cp -n /var/jenkins_config/credentials.xml /var/jenkins_home/credentials.xml;
+{{- end }}
+
+{{- if .Values.master.adminEmail }}
+    cp -n /var/jenkins_config/locationconfiguration.xml /var/jenkins_home/jenkins.model.JenkinsLocationConfiguration.xml;
+{{- end }}
+
+{{- if .Values.prometheus.enabled }}
+    cp -n /var/jenkins_config/prometheus.xml /var/jenkins_home/org.jenkinsci.plugins.prometheus.config.PrometheusConfiguration.xml;
+{{- end }}
+
+    cp -n /var/jenkins_config/globallibraries.xml /var/jenkins_home/org.jenkinsci.plugins.workflow.libs.GlobalLibraries.xml;
+
+{{- range $key, $val := .Values.master.initScripts }}
+  init{{ $key }}.groovy: |-
+{{ $val | indent 4 }}
+{{- end }}
+  plugins.txt: |-
+{{- if .Values.master.installPlugins }}
+{{- range $index, $val := .Values.master.installPlugins }}
+{{ $val | indent 4 }}
+{{- end }}
+{{- end }}
+{{- end -}}

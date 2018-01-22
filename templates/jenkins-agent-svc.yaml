@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "jenkins.fullname" . }}-agent
+  labels:
+    app: {{ template "jenkins.fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    component: "{{ .Release.Name }}-{{ .Values.master.component }}"
+spec:
+  ports:
+    - port: {{ .Values.master.slaveListenerPort }}
+      targetPort: {{ .Values.master.slaveListenerPort }}
+      name: slavelistener
+  selector:
+    component: "{{ .Release.Name }}-{{ .Values.master.component }}"
+  type: ClusterIP
